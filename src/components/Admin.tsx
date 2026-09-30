@@ -7,7 +7,7 @@ import {
   Gift, FileText, Clock, Share2, Palette, Sparkles, Heart, Check, Sun, Moon,
   Timer, Play, Copy, CheckCheck, Search, FolderPlus, Maximize2, CreditCard, RotateCcw,
   KeyRound, Shield, UserCheck, Eye, EyeOff, UserPlus, Bell, Camera, UserCircle,
-  Download, ShieldAlert, FileArchive, TrendingUp, QrCode
+  Download, ShieldAlert, FileArchive, TrendingUp, QrCode, MapPin
 } from 'lucide-react';
 import { Service, Booking as BookingType, Professional, AdminAreaPermission } from '../types';
 import { BookingReceiptModal } from './BookingReceiptModal';
@@ -37,7 +37,9 @@ export function Admin() {
     bookings, updateBookingStatus, updatePaymentStatus, cancelBooking, rescheduleBooking, logout,
     professionals, addProfessional, updateProfessional, removeProfessional, 
     updateLoyaltyStamps, updateReferralStamps, themeMode, toggleTheme,
-    showToast, newBookingAlert, setNewBookingAlert
+    showToast, newBookingAlert, setNewBookingAlert,
+    clientArrivalAlert, setClientArrivalAlert,
+    confirmClientPresence, startServiceWithPresence
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<
@@ -1166,8 +1168,46 @@ export function Admin() {
                                 </button>
                               </div>
 
+                              {/* Destaque de Presença da Cliente */}
+                              {booking.clientArrived && !booking.presenceConfirmed && (
+                                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-xl space-y-1.5 animate-pulse">
+                                  <div className="flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-200">
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                                      📍 Cliente no Salão!
+                                    </span>
+                                    {booking.clientArrivedAt && (
+                                      <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+                                        {new Date(booking.clientArrivedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => startServiceWithPresence(booking.id)}
+                                    className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                                  >
+                                    <CheckCircle2 size={13} />
+                                    <span>Confirmar Presença & Iniciar</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {booking.presenceConfirmed && booking.status !== 'in_progress' && booking.status !== 'completed' && (
+                                <div className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-900 flex items-center justify-between">
+                                  <span className="flex items-center gap-1">
+                                    <Check size={12} /> Presença Confirmada
+                                  </span>
+                                  {booking.presenceConfirmedAt && (
+                                    <span className="font-mono text-[9px] opacity-75">
+                                      {new Date(booking.presenceConfirmedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
                               {/* Ação rápida para Iniciar Atendimento */}
-                              {(booking.status === 'confirmed' || booking.status === 'pending') && (
+                              {(booking.status === 'confirmed' || booking.status === 'pending') && !booking.clientArrived && (
                                 <button
                                   type="button"
                                   onClick={() => updateBookingStatus(booking.id, 'in_progress', new Date().toISOString())}
@@ -4668,6 +4708,155 @@ export function Admin() {
                       type="button"
                       onClick={() => setNewBookingAlert(null)}
                       className="py-2 px-4 bg-stone-200 hover:bg-stone-300 dark:bg-stone-700 dark:hover:bg-stone-600 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Dispensar Notificação
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL / TELA DE NOTIFICAÇÃO: CLIENTE CHEGOU AO SALÃO */}
+      <AnimatePresence>
+        {clientArrivalAlert && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-stone-900/75 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="bg-white dark:bg-stone-900 rounded-3xl shadow-2xl border-2 border-emerald-500/80 dark:border-emerald-500/60 w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]"
+            >
+              {/* Header do Alerta com Pulso Visual */}
+              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white p-5 flex items-center justify-between relative overflow-hidden shrink-0">
+                <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
+                <div className="flex items-center gap-3 relative z-10">
+                  <div className="w-12 h-12 rounded-2xl bg-white text-emerald-600 flex items-center justify-center shadow-lg animate-bounce">
+                    <MapPin size={26} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold tracking-widest uppercase bg-white/20 px-2 py-0.5 rounded-full inline-block mb-1">
+                      Presença na Recepção
+                    </span>
+                    <h3 className="text-xl font-serif font-bold">Cliente Chegou ao Salão!</h3>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setClientArrivalAlert(null)}
+                  className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors cursor-pointer relative z-10"
+                  title="Fechar Notificação"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Conteúdo com os dados da chegada */}
+              <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+                <div className="p-4 bg-emerald-50/70 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-stone-500 dark:text-stone-400 font-medium">Cliente no Estabelecimento</div>
+                      <div className="text-lg font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                        {clientArrivalAlert.clientName || 'Cliente'}
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-300">
+                      Chegada Registrada
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 text-stone-600 dark:text-stone-300">
+                    <div>
+                      <span className="text-stone-400 block text-[10px]">Horário Agendado</span>
+                      <span className="font-bold text-stone-900 dark:text-stone-100">{clientArrivalAlert.time}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-400 block text-[10px]">Hora da Chegada</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                        {clientArrivalAlert.clientArrivedAt 
+                          ? new Date(clientArrivalAlert.clientArrivedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                          : 'Agora'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Serviços Solicitados */}
+                {(() => {
+                  const bServices = services.filter(s => (clientArrivalAlert.serviceIds || [clientArrivalAlert.serviceId]).includes(s.id));
+                  const totalDur = bServices.reduce((sum, s) => sum + (s.duration || 60), 0);
+                  const totalPrice = clientArrivalAlert.finalPrice !== undefined && clientArrivalAlert.finalPrice !== null
+                    ? clientArrivalAlert.finalPrice
+                    : bServices.reduce((sum, s) => sum + s.price, 0);
+
+                  return (
+                    <div className="p-4 bg-stone-50 dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-stone-700 dark:text-stone-300">
+                        <span>Procedimento(s) ({bServices.length})</span>
+                        <span>{totalDur} min • R$ {totalPrice.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {bServices.map(s => (
+                          <div key={s.id} className="text-xs text-stone-600 dark:text-stone-300 flex items-center justify-between">
+                            <span>• {s.name}</span>
+                            <span className="text-stone-400">{s.duration} min</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Ações para a Administradora */}
+                <div className="space-y-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      startServiceWithPresence(clientArrivalAlert.id);
+                      setClientArrivalAlert(null);
+                    }}
+                    className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all cursor-pointer active:scale-95"
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>Confirmar Presença & Iniciar Atendimento</span>
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        confirmClientPresence(clientArrivalAlert.id);
+                        setClientArrivalAlert(null);
+                      }}
+                      className="py-2.5 px-3 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-stone-200 dark:border-stone-700"
+                    >
+                      <Check size={14} className="text-emerald-600" />
+                      <span>Apenas Validar Presença</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReceiptBooking(clientArrivalAlert);
+                        setClientArrivalAlert(null);
+                      }}
+                      className="py-2.5 px-3 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-stone-200 dark:border-stone-700"
+                    >
+                      <FileText size={14} className="text-rose-500" />
+                      <span>Ver Comprovante</span>
+                    </button>
+                  </div>
+
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setClientArrivalAlert(null)}
+                      className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer font-medium"
                     >
                       Dispensar Notificação
                     </button>

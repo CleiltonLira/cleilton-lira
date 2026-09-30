@@ -108,6 +108,11 @@ interface AppContextType {
   toggleTheme: () => void;
   newBookingAlert: (Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null;
   setNewBookingAlert: (b: (Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null) => void;
+  clientArrivalAlert: (Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null;
+  setClientArrivalAlert: (b: (Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null) => void;
+  markClientArrived: (id: string) => Promise<boolean>;
+  confirmClientPresence: (id: string, confirmedBy?: string) => Promise<boolean>;
+  startServiceWithPresence: (id: string) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -143,7 +148,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [bookings, setBookings] = useState<(Booking & { clientPhone?: string; clientName?: string })[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [newBookingAlert, setNewBookingAlert] = useState<(Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null>(null);
+  const [clientArrivalAlert, setClientArrivalAlert] = useState<(Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null>(null);
   const knownBookingIdsRef = useRef<Set<string>>(new Set());
+  const knownClientArrivedIdsRef = useRef<Set<string>>(new Set());
   const initialBookingsLoadedRef = useRef<boolean>(false);
 
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -197,7 +204,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!bkgRes.ok) return;
       const data: (Booking & { clientPhone?: string; clientName?: string; clientCpf?: string })[] = await bkgRes.json();
 
-      // Se já carregou inicialmente, verificar se há novo agendamento que acabou de entrar
+      // Se já carregou inicialmente, verificar se há novo agendamento ou chegada de cliente ao salão
       if (initialBookingsLoadedRef.current) {
         const newlyArrived = data.find(b => !knownBookingIdsRef.current.has(b.id) && b.status === 'pending');
         if (newlyArrived) {
@@ -206,9 +213,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
             playNotificationChime();
           } catch {}
         }
+
+        // Alerta em tempo real para a administradora quando a cliente marca presença/chegada
+        const newlyClientArrived = data.find(
+          b => b.clientArrived && !b.presenceConfirmed && !knownClientArrivedIdsRef.current.has(b.id) && b.status !== 'completed' && b.status !== 'cancelled'
+        );
+        if (newlyClientArrived) {
+          knownClientArrivedIdsRef.current.add(newlyClientArrived.id);
+          setClientArrivalAlert(newlyClientArrived);
+          try {
+            playNotificationChime();
+          } catch {}
+        }
       }
 
-      data.forEach(b => knownBookingIdsRef.current.add(b.id));
+      data.forEach(b => {
+        knownBookingIdsRef.current.add(b.id);
+        if (b.presenceConfirmed || b.status === 'completed' || b.status === 'cancelled') {
+          knownClientArrivedIdsRef.current.add(b.id);
+        }
+      });
       initialBookingsLoadedRef.current = true;
       setBookings(data);
     } catch (e) {
@@ -657,6 +681,98 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const markClientArrived = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/bookings/${id}/client-arrived`, { method: 'PUT' });
+      if (res.ok) {
+        const data = await res.json();
+        setBookings(prev => prev.map(b => b.id === id ? {
+          ...b,
+          clientArrived: true,
+          clientArrivedAt: data.clientArrivedAt || new Date().toISOString()
+        } : b));
+        await refreshBookings();
+        showToast('Presença confirmada! A equipe do salão foi notificada da sua chegada.', 'success');
+        return true;
+      }
+      showToast('Não foi possível registrar a chegada.', 'error');
+      return false;
+    } catch {
+      showToast('Erro de conexão ao registrar chegada.', 'error');
+      return false;
+    }
+  };
+
+  const confirmClientPresence = async (id: string, confirmedBy?: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/bookings/${id}/confirm-presence`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmedBy: confirmedBy || user?.name || 'Administração' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBookings(prev => prev.map(b => b.id === id ? {
+          ...b,
+          clientArrived: true,
+          presenceConfirmed: true,
+          presenceConfirmedAt: data.presenceConfirmedAt || new Date().toISOString(),
+          presenceConfirmedBy: confirmedBy || user?.name || 'Administração'
+        } : b));
+        knownClientArrivedIdsRef.current.add(id);
+        if (clientArrivalAlert && clientArrivalAlert.id === id) {
+          setClientArrivalAlert(null);
+        }
+        await refreshBookings();
+        showToast('Presença validada com sucesso! Pagamento e QR Code liberados.', 'success');
+        return true;
+      }
+      return false;
+    } catch {
+      showToast('Erro ao confirmar presença.', 'error');
+      return false;
+    }
+  };
+
+  const startServiceWithPresence = async (id: string): Promise<boolean> => {
+    try {
+      const nowIso = new Date().toISOString();
+      // 1. Confirma presença
+      await fetch(`/api/bookings/${id}/confirm-presence`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmedBy: user?.name || 'Administração' })
+      });
+      // 2. Inicia o atendimento
+      const res = await fetch(`/api/bookings/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'in_progress', startedAt: nowIso })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBookings(prev => prev.map(b => b.id === id ? {
+          ...b,
+          status: 'in_progress',
+          clientArrived: true,
+          presenceConfirmed: true,
+          startedAt: data.startedAt || nowIso
+        } : b));
+        knownClientArrivedIdsRef.current.add(id);
+        if (clientArrivalAlert && clientArrivalAlert.id === id) {
+          setClientArrivalAlert(null);
+        }
+        await refreshBookings();
+        showToast('Presença confirmada e atendimento iniciado! Cronômetro ativado.', 'success');
+        return true;
+      }
+      return false;
+    } catch {
+      showToast('Erro ao iniciar atendimento.', 'error');
+      return false;
+    }
+  };
+
   const handleUpdateSettings = async (newSettings: Settings) => {
     try {
       await fetch('/api/settings', {
@@ -723,7 +839,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       hasUserRedeemedPromo,
       applyPromoAndGoToBooking,
       themeMode, toggleTheme,
-      newBookingAlert, setNewBookingAlert
+      newBookingAlert, setNewBookingAlert,
+      clientArrivalAlert, setClientArrivalAlert,
+      markClientArrived, confirmClientPresence, startServiceWithPresence
     }}>
       {children}
     </AppContext.Provider>

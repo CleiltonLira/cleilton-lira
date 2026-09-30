@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Calendar, Clock, XCircle, Edit2, Gift, Star, FileText, Sparkles, 
   Percent, Share2, Copy, Check, Users, Heart, ArrowRight, Camera, 
-  RefreshCw, Trash2, Image as ImageIcon, Video, VideoOff, SwitchCamera
+  RefreshCw, Trash2, Image as ImageIcon, Video, VideoOff, SwitchCamera,
+  MapPin, CheckCircle2, Bell, AlertCircle
 } from 'lucide-react';
 import { Booking } from '../types';
 import { BookingReceiptModal } from './BookingReceiptModal';
@@ -13,7 +14,7 @@ export function Client() {
   const { 
     user, bookings, services, logout, cancelBooking, rescheduleBooking, 
     settings, feedbacks, addFeedback, updateLoyaltyStamps, updateReferralStamps, 
-    showToast, addBooking, refreshBookings, refreshUser
+    showToast, addBooking, refreshBookings, refreshUser, markClientArrived, setView
   } = useApp();
 
   const [rescheduleModal, setRescheduleModal] = useState<{ isOpen: boolean, booking: Booking | null }>({ isOpen: false, booking: null });
@@ -27,7 +28,7 @@ export function Client() {
   const [receiptBooking, setReceiptBooking] = useState<Booking | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [activeCategory, setActiveCategory] = useState<'all' | 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled'>('all');
-  const [activeViewTab, setActiveViewTab] = useState<'appointments' | 'history'>('appointments');
+  const [activeViewTab, setActiveViewTab] = useState<'appointments' | 'presence' | 'history'>('appointments');
 
   // Camera State for Customer Evaluation / Feedback
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -108,6 +109,22 @@ export function Client() {
       .filter(b => b.userId === user.id || (user.phone && b.clientPhone === user.phone) || (user.cpf && b.clientCpf === user.cpf))
       .sort((a, b) => new Date(`${b.date}T${b.time || '00:00'}`).getTime() - new Date(`${a.date}T${a.time || '00:00'}`).getTime());
   }, [bookings, user]);
+
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const todayBookings = useMemo(() => {
+    return myBookings.filter(b => b.date === todayStr && b.status !== 'cancelled');
+  }, [myBookings, todayStr]);
+
+  const activeArrivalPendingCount = useMemo(() => {
+    return todayBookings.filter(b => !b.clientArrived && b.status !== 'completed').length;
+  }, [todayBookings]);
 
   const filteredBookings = useMemo(() => {
     if (activeCategory === 'all') return myBookings;
@@ -668,24 +685,29 @@ export function Client() {
         </div>
       )}
 
-      {/* Cabeçalho e Abas: Agendamentos por Categorias & Histórico da Cliente */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 dark:border-stone-800 pb-4">
+      {/* Cabeçalho e Abas: Agendamentos por Categorias, Presença no Salão & Histórico da Cliente */}
+      <div className="mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-stone-100 dark:border-stone-800 pb-4">
         <div>
           <h3 className="text-2xl font-serif font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
-            <span>{activeViewTab === 'appointments' ? 'Meus Atendimentos' : 'Histórico da Cliente'}</span>
+            <span>
+              {activeViewTab === 'appointments' ? 'Meus Atendimentos' :
+               activeViewTab === 'presence' ? 'Confirmar Presença no Salão' : 'Histórico da Cliente'}
+            </span>
             <span className="text-xs font-sans font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 px-2.5 py-1 rounded-full border border-rose-200 dark:border-rose-900">
-              {myBookings.length} {myBookings.length === 1 ? 'registro' : 'registros'}
+              {activeViewTab === 'presence' ? `${todayBookings.length} hoje` : `${myBookings.length} ${myBookings.length === 1 ? 'registro' : 'registros'}`}
             </span>
           </h3>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
             {activeViewTab === 'appointments' 
               ? 'Acompanhe seus horários separados por categoria e status em tempo real.'
+              : activeViewTab === 'presence'
+              ? 'Chegou ao salão? Avise a recepção com um clique para iniciar seu atendimento imediatamente.'
               : 'Linha do tempo completa com todas as suas visitas, valores investidos e economias.'}
           </p>
         </div>
 
-        {/* Alternador entre Categorias e Histórico Completo */}
-        <div className="flex items-center gap-1.5 bg-stone-100 dark:bg-stone-800 p-1 rounded-2xl w-fit">
+        {/* Alternador entre Categorias, Presença e Histórico Completo */}
+        <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 dark:bg-stone-800 p-1 rounded-2xl w-fit">
           <button
             onClick={() => setActiveViewTab('appointments')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -695,6 +717,23 @@ export function Client() {
             }`}
           >
             Agendamentos
+          </button>
+          <button
+            onClick={() => setActiveViewTab('presence')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 relative ${
+              activeViewTab === 'presence'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xs'
+                : 'text-stone-600 hover:text-emerald-600 dark:text-stone-300 dark:hover:text-emerald-400'
+            }`}
+          >
+            <MapPin size={14} className={activeArrivalPendingCount > 0 ? "text-emerald-400 animate-bounce" : ""} />
+            <span>Confirmar Presença (Cheguei)</span>
+            {activeArrivalPendingCount > 0 && (
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveViewTab('history')}
@@ -910,6 +949,32 @@ export function Client() {
                       </div>
                     )}
 
+                    {/* Botão de Confirmação de Presença no Dia */}
+                    {booking.date === todayStr && booking.status !== 'cancelled' && booking.status !== 'completed' && (
+                      <div className="mt-3 pt-3 border-t border-stone-100 dark:border-stone-800">
+                        {!booking.clientArrived ? (
+                          <button
+                            type="button"
+                            onClick={() => markClientArrived(booking.id)}
+                            className="w-full py-2.5 px-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95"
+                          >
+                            <MapPin size={14} className="animate-bounce" />
+                            <span>📍 JÁ ESTOU NO SALÃO! (Confirmar Presença)</span>
+                          </button>
+                        ) : !booking.presenceConfirmed ? (
+                          <div className="w-full py-2 px-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 rounded-xl text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center justify-center gap-1.5">
+                            <Bell size={13} className="text-emerald-600 animate-pulse" />
+                            <span>Chegada Registrada • Aguardando equipe iniciar atendimento</span>
+                          </div>
+                        ) : (
+                          <div className="w-full py-1.5 px-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-xl text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-1.5">
+                            <CheckCircle2 size={13} className="text-emerald-600" />
+                            <span>✓ Presença Confirmada pela Equipe do Salão</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="mt-4 pt-4 border-t border-stone-100 dark:border-stone-800 flex flex-wrap items-center justify-between gap-3">
                       <button 
                         onClick={() => setReceiptBooking(booking)}
@@ -952,6 +1017,204 @@ export function Client() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ABA DEDICADA: CONFIRMAR PRESENÇA (CHEGUEI NO SALÃO) */}
+      {activeViewTab === 'presence' && (
+        <div className="space-y-6 max-w-3xl mx-auto">
+          {/* Banner de Boas-Vindas e Instruções */}
+          <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white p-6 sm:p-8 rounded-3xl shadow-lg relative overflow-hidden">
+            <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative z-10 flex items-start gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 shadow-inner">
+                <MapPin size={30} className="text-white animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[11px] font-extrabold uppercase tracking-widest bg-white/20 px-3 py-0.5 rounded-full inline-block">
+                  Recepção & Início Imediato
+                </span>
+                <h4 className="text-2xl font-serif font-bold text-white">Chegou ao Salão? Confirme Aqui!</h4>
+                <p className="text-xs text-emerald-100 max-w-xl leading-relaxed">
+                  Assim que você entrar na recepção do salão, confirme sua presença clicando no botão abaixo. 
+                  A administradora e sua profissional receberão uma notificação instantânea para autorizar o início do seu procedimento.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Lista de Agendamentos de Hoje com Confirmação de Presença */}
+          {todayBookings.length > 0 ? (
+            <div className="space-y-4">
+              <h4 className="text-sm font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider flex items-center gap-2">
+                <Calendar size={16} className="text-emerald-500" />
+                <span>Seus Agendamentos para Hoje ({new Date().toLocaleDateString('pt-BR')})</span>
+              </h4>
+
+              {todayBookings.map(b => {
+                const bServices = services.filter(s => (b.serviceIds || [b.serviceId]).includes(s.id));
+                const totalDur = bServices.reduce((sum, s) => sum + (s.duration || 60), 0);
+                const finalPrice = b.finalPrice !== undefined && b.finalPrice !== null
+                  ? b.finalPrice
+                  : bServices.reduce((sum, s) => sum + s.price, 0);
+
+                return (
+                  <div 
+                    key={b.id}
+                    className={`bg-white dark:bg-stone-900 rounded-3xl p-6 border shadow-sm transition-all space-y-5 ${
+                      b.clientArrived 
+                        ? 'border-emerald-300 dark:border-emerald-800/80 ring-2 ring-emerald-500/20' 
+                        : 'border-stone-200 dark:border-stone-800'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 dark:border-stone-800 pb-4">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 block">Horário Marcado</span>
+                        <div className="text-2xl font-serif font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                          <Clock size={20} className="text-rose-500" />
+                          <span>{b.time}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {b.presenceConfirmed ? (
+                          <span className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 border border-emerald-300">
+                            <CheckCircle2 size={14} className="text-emerald-600" />
+                            Presença Validada pela Recepção
+                          </span>
+                        ) : b.clientArrived ? (
+                          <span className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 border border-amber-300 animate-pulse">
+                            <Bell size={14} className="text-amber-600" />
+                            Chegada Avisada • Aguardando Início
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1.5 rounded-full bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300 text-xs font-bold border border-stone-200 dark:border-stone-700">
+                            Aguardando Chegada no Salão
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Serviços inclusos */}
+                    <div className="bg-stone-50 dark:bg-stone-800/50 p-4 rounded-2xl border border-stone-100 dark:border-stone-800 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-stone-700 dark:text-stone-300">
+                        <span>Procedimento(s) ({bServices.length})</span>
+                        <span>{totalDur} min • R$ {finalPrice.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {bServices.map(s => (
+                          <div key={s.id} className="text-xs text-stone-600 dark:text-stone-400 flex items-center justify-between">
+                            <span>• {s.name}</span>
+                            <span className="text-stone-400 text-[11px]">{s.duration} min</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Estado e Ação Principal de Presença */}
+                    {!b.clientArrived ? (
+                      <div className="space-y-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => markClientArrived(b.id)}
+                          className="w-full py-4 px-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-700 text-white rounded-2xl font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/30 transition-all cursor-pointer active:scale-95"
+                        >
+                          <MapPin size={20} className="animate-bounce" />
+                          <span>📍 JÁ ESTOU NO SALÃO! CONFIRMAR PRESENÇA</span>
+                        </button>
+                        <p className="text-[11px] text-center text-stone-400 dark:text-stone-500">
+                          Ao clicar, uma notificação com alerta sonoro será enviada imediatamente para o painel da recepção.
+                        </p>
+                      </div>
+                    ) : !b.presenceConfirmed ? (
+                      <div className="p-4 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 text-center space-y-2">
+                        <div className="flex items-center justify-center gap-2 text-emerald-800 dark:text-emerald-200 font-bold text-sm">
+                          <CheckCircle2 size={18} className="text-emerald-600" />
+                          <span>Você já marcou sua chegada!</span>
+                        </div>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                          {b.clientArrivedAt ? `Chegada registrada às ${new Date(b.clientArrivedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. ` : ''}
+                          A recepção já recebeu seu aviso e sua profissional está autorizando o início do atendimento. Relaxe e aguarde ser chamada! ✨
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-emerald-50 dark:bg-emerald-950/60 rounded-2xl border border-emerald-300 dark:border-emerald-800 text-center space-y-2">
+                        <div className="flex items-center justify-center gap-2 text-emerald-800 dark:text-emerald-200 font-bold text-sm">
+                          <Sparkles size={18} className="text-emerald-600" />
+                          <span>Presença 100% Confirmada!</span>
+                        </div>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                          {b.status === 'in_progress' 
+                            ? '✂️ Seu atendimento já foi iniciado e está em andamento!' 
+                            : 'Sua presença foi validada pela recepção do salão. Bom atendimento!'}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-2 border-t border-stone-100 dark:border-stone-800">
+                      <button
+                        type="button"
+                        onClick={() => setReceiptBooking(b)}
+                        className="text-xs font-semibold text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <FileText size={14} className="text-rose-500" />
+                        <span>Ver Comprovante / Chave PIX</span>
+                      </button>
+
+                      <span className="text-[11px] text-stone-400">
+                        Código: #{b.id.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-stone-900 rounded-3xl p-8 border border-stone-100 dark:border-stone-800 shadow-sm text-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-rose-50 dark:bg-rose-950/50 text-rose-500 flex items-center justify-center mx-auto">
+                <Calendar size={28} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-lg font-serif font-bold text-stone-900 dark:text-stone-100">
+                  Nenhum agendamento para hoje ({new Date().toLocaleDateString('pt-BR')})
+                </h4>
+                <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto">
+                  A confirmação de presença fica liberada no dia do seu atendimento assim que você chegar no salão.
+                </p>
+              </div>
+
+              {myBookings.filter(b => b.status === 'confirmed' || b.status === 'pending').length > 0 ? (
+                <div className="pt-2">
+                  <span className="text-xs font-semibold text-stone-600 dark:text-stone-300 block mb-3">
+                    Seus próximos agendamentos futuros:
+                  </span>
+                  <div className="max-w-md mx-auto space-y-2">
+                    {myBookings
+                      .filter(b => b.status === 'confirmed' || b.status === 'pending')
+                      .slice(0, 3)
+                      .map(b => (
+                        <div key={b.id} className="p-3 bg-stone-50 dark:bg-stone-800/60 rounded-xl border border-stone-100 dark:border-stone-800 flex items-center justify-between text-xs">
+                          <span className="font-bold text-stone-800 dark:text-stone-200">
+                            {new Date(b.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} às {b.time}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 text-[10px] font-bold">
+                            {b.status === 'confirmed' ? 'Agendado' : 'Aguardando'}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setView('booking')}
+                  className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-sm"
+                >
+                  Agendar Novo Horário Agora
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -20,19 +20,17 @@ export function BookingReceiptModal({ isOpen, onClose, booking }: BookingReceipt
   const [copiedPixKey, setCopiedPixKey] = useState<boolean>(false);
   const [copiedPixPayload, setCopiedPixPayload] = useState<boolean>(false);
 
-  if (!isOpen || !booking) return null;
-
-  // Resolve booking services
-  const bookingServiceIds = booking.serviceIds && booking.serviceIds.length > 0 
+  // Resolve booking services safely
+  const bookingServiceIds = booking?.serviceIds && booking.serviceIds.length > 0 
     ? booking.serviceIds 
-    : (booking.serviceId ? [booking.serviceId] : []);
+    : (booking?.serviceId ? [booking.serviceId] : []);
 
   const bookingServices = services.filter(s => bookingServiceIds.includes(s.id));
 
-  // Determine pricing
-  let originalPrice = booking.originalPrice || 0;
-  let finalPrice = booking.finalPrice || 0;
-  let discountAmount = booking.discountAmount || 0;
+  // Determine pricing safely
+  let originalPrice = booking?.originalPrice || 0;
+  let finalPrice = booking?.finalPrice || 0;
+  let discountAmount = booking?.discountAmount || 0;
 
   // If existing older booking didn't have saved prices, compute them from services list
   if (originalPrice === 0 && bookingServices.length > 0) {
@@ -51,8 +49,14 @@ export function BookingReceiptModal({ isOpen, onClose, booking }: BookingReceipt
     ? Math.round((discountAmount / originalPrice) * 100) 
     : 0;
 
-  // Gera o QR Code Pix e payload com o valor final do agendamento
+  // Gera o QR Code Pix e payload com o valor final do agendamento (Hook chamado sempre incondicionalmente)
   useEffect(() => {
+    if (!isOpen || !booking) {
+      setPixQrDataUrl('');
+      setPixPayload('');
+      return;
+    }
+
     if (settings?.paymentPixKey && settings.paymentPixKey.trim()) {
       generatePixQrCodeDataUrl(settings.paymentPixKey.trim(), {
         merchantName: settings.name || 'BELLA BEAUTY',
@@ -69,7 +73,9 @@ export function BookingReceiptModal({ isOpen, onClose, booking }: BookingReceipt
       setPixQrDataUrl('');
       setPixPayload('');
     }
-  }, [settings?.paymentPixKey, settings?.name, finalPrice]);
+  }, [isOpen, booking, settings?.paymentPixKey, settings?.name, finalPrice]);
+
+  if (!isOpen || !booking) return null;
 
   const professional = professionals.find(p => p.id === booking.professionalId);
   const clientName = booking.clientName || user?.name || 'Cliente';
