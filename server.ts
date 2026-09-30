@@ -131,6 +131,14 @@ async function startServer() {
       date TEXT NOT NULL,
       createdAt TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL,
+      details TEXT,
+      performedBy TEXT,
+      createdAt TEXT NOT NULL
+    );
   `);
 
   // Migration for promotions
@@ -674,6 +682,39 @@ async function startServer() {
   }
 
   // Helper to decrypt booking sensitive client data
+  async function logAudit(action: string, details: string, performedBy: string = 'Administração') {
+    try {
+      const id = Math.random().toString(36).substring(7);
+      const createdAt = new Date().toISOString();
+      await db.run(
+        "INSERT INTO audit_logs (id, action, details, performedBy, createdAt) VALUES (?, ?, ?, ?, ?)",
+        [id, action, details, performedBy, createdAt]
+      );
+    } catch (e) {
+      console.error('Erro ao registrar log de auditoria:', e);
+    }
+  }
+
+  // Audit Logs endpoints
+  app.get("/api/audit-logs", async (req, res) => {
+    try {
+      const logs = await db.all("SELECT * FROM audit_logs ORDER BY createdAt DESC LIMIT 150");
+      res.json(logs);
+    } catch (err) {
+      res.status(500).json({ error: "Erro ao carregar logs de auditoria" });
+    }
+  });
+
+  app.delete("/api/audit-logs", async (req, res) => {
+    try {
+      await db.run("DELETE FROM audit_logs");
+      await logAudit("Limpeza de Logs", "Todos os registros de auditoria foram limpos", "Administração");
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Erro ao limpar logs de auditoria" });
+    }
+  });
+
   function decryptBooking(b: any) {
     if (!b) return null;
     return {
@@ -1291,6 +1332,7 @@ async function startServer() {
     const { id, name, category, duration, price } = req.body;
     await db.run("INSERT INTO services (id, name, category, duration, price) VALUES (?, ?, ?, ?, ?)", 
       [id, name, category, duration, price]);
+    await logAudit("Criação de Serviço", `Serviço "${name}" criado (${category} - R$ ${price})`);
     triggerAutoUpdateZip();
     res.json({ success: true });
   });
@@ -1299,12 +1341,14 @@ async function startServer() {
     const { name, category, duration, price } = req.body;
     await db.run("UPDATE services SET name = ?, category = ?, duration = ?, price = ? WHERE id = ?", 
       [name, category, duration, price, req.params.id]);
+    await logAudit("Alteração de Serviço / Preço", `Serviço "${name}" atualizado (Novo Preço: R$ ${price})`);
     triggerAutoUpdateZip();
     res.json({ success: true });
   });
 
   app.delete("/api/services/:id", async (req, res) => {
     await db.run("DELETE FROM services WHERE id = ?", [req.params.id]);
+    await logAudit("Exclusão de Serviço", `Serviço ID ${req.params.id} excluído`);
     triggerAutoUpdateZip();
     res.json({ success: true });
   });
@@ -1838,6 +1882,7 @@ async function startServer() {
   // Excluir cliente (se solicitado pela administradora)
   app.delete("/api/users/:id", async (req, res) => {
     await db.run("DELETE FROM users WHERE id = ? AND role = 'client'", [req.params.id]);
+    await logAudit("Exclusão de Cliente", `Cliente ID ${req.params.id} excluído do sistema`);
     res.json({ success: true });
   });
 
@@ -2281,6 +2326,7 @@ async function startServer() {
         studioMapsUrl !== undefined ? studioMapsUrl : ''
       ]
     );
+    await logAudit("Atualização de Configurações", "Configurações gerais, chave PIX ou regras do salão atualizadas");
     triggerAutoUpdateZip();
     res.json({ success: true, promoId: finalPromoId });
   });
@@ -2298,7 +2344,7 @@ async function startServer() {
       ? path.join(process.cwd(), 'dist') 
       : path.join(appDir, 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.use((req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

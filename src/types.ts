@@ -12,7 +12,8 @@ export type AdminAreaPermission =
   | 'personalization'
   | 'promo'
   | 'schedule'
-  | 'settings';
+  | 'settings'
+  | 'audit';
 
 export interface User {
   id: string;

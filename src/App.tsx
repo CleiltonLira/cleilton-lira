@@ -8,6 +8,7 @@ import { Admin } from './components/Admin';
 import { Profile } from './components/Profile';
 import { Footer } from './components/Footer';
 import { Toast } from './components/Toast';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function AppContent() {
   const { view, settings } = useApp();
@@ -43,8 +44,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

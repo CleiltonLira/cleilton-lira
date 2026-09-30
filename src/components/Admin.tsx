@@ -27,6 +27,7 @@ export const ADMIN_MODULES: { id: AdminAreaPermission; label: string; descriptio
   { id: 'promo', label: 'Promoção', description: 'Ofertas da semana e avisos WhatsApp', icon: Zap },
   { id: 'schedule', label: 'Horários e Dias', description: 'Dias de atendimento e horários', icon: Clock },
   { id: 'settings', label: 'Dados & Pagamento', description: 'Telefone, endereço, Chave PIX e dados', icon: Settings2 },
+  { id: 'audit', label: 'Auditoria & Logs', description: 'Registro de ações críticas e auditoria do sistema', icon: ShieldAlert },
 ];
 
 export function Admin() {
@@ -41,8 +42,33 @@ export function Admin() {
 
   const [activeTab, setActiveTab] = useState<
     'bookings' | 'services' | 'categories' | 'schedule' | 'settings' | 
-    'promo' | 'loyalty' | 'referral' | 'personalization' | 'professionals' | 'studio' | 'clients' | 'financial'
+    'promo' | 'loyalty' | 'referral' | 'personalization' | 'professionals' | 'studio' | 'clients' | 'financial' | 'audit'
   >('bookings');
+
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditSearch, setAuditSearch] = useState('');
+
+  const fetchAuditLogs = async () => {
+    setAuditLoading(true);
+    try {
+      const res = await fetch('/api/audit-logs');
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar logs de auditoria:', err);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'audit') {
+      fetchAuditLogs();
+    }
+  }, [activeTab]);
 
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
   const autoCompletedIdsRef = useRef<Set<string>>(new Set());
@@ -3351,6 +3377,124 @@ export function Admin() {
             );
           })()}
         </form>
+      )}
+
+      {/* ABA: AUDITORIA & LOGS DO SISTEMA */}
+      {activeTab === 'audit' && (
+        <div className="space-y-6 max-w-5xl">
+          <div className="bg-white dark:bg-stone-900 p-6 md:p-8 rounded-3xl shadow-sm border border-stone-100 dark:border-stone-800">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div>
+                <h3 className="font-serif text-2xl font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                  <ShieldAlert className="text-rose-500" size={24} />
+                  Auditoria & Logs de Segurança
+                </h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                  Registro completo de ações críticas realizadas no painel administrativo (alterações de preços, exclusão de clientes, edição de serviços e configurações do salão).
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={fetchAuditLogs}
+                  disabled={auditLoading}
+                  className="px-4 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-750 text-stone-800 dark:text-stone-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <RotateCcw size={14} className={auditLoading ? 'animate-spin' : ''} />
+                  <span>Atualizar Logs</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.confirm('Tem certeza que deseja limpar todos os registros de auditoria?')) {
+                      const res = await fetch('/api/audit-logs', { method: 'DELETE' });
+                      if (res.ok) {
+                        showToast('Logs de auditoria limpos com sucesso!', 'success');
+                        fetchAuditLogs();
+                      }
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors border border-rose-200 dark:border-rose-900"
+                >
+                  <Trash2 size={14} />
+                  <span>Limpar Logs</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <div className="relative">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por ação, detalhes ou autor..."
+                  value={auditSearch}
+                  onChange={e => setAuditSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-800/50 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-stone-100 dark:border-stone-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 dark:bg-stone-800/80 text-stone-500 font-semibold uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">Data / Hora</th>
+                    <th className="px-4 py-3">Ação Crítica</th>
+                    <th className="px-4 py-3">Detalhes</th>
+                    <th className="px-4 py-3">Autor / Perfil</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                  {auditLogs
+                    .filter(log => {
+                      if (!auditSearch) return true;
+                      const q = auditSearch.toLowerCase();
+                      return (
+                        log.action?.toLowerCase().includes(q) ||
+                        log.details?.toLowerCase().includes(q) ||
+                        log.performedBy?.toLowerCase().includes(q)
+                      );
+                    })
+                    .map(log => {
+                      const dt = new Date(log.createdAt);
+                      const formattedDate = !isNaN(dt.getTime()) 
+                        ? `${dt.toLocaleDateString('pt-BR')} às ${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                        : log.createdAt;
+
+                      return (
+                        <tr key={log.id} className="hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors">
+                          <td className="px-4 py-3.5 font-mono text-stone-500 whitespace-nowrap">
+                            {formattedDate}
+                          </td>
+                          <td className="px-4 py-3.5 font-bold text-stone-900 dark:text-stone-100">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/50">
+                              <ShieldAlert size={12} className="text-amber-600" />
+                              {log.action}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-stone-600 dark:text-stone-300 max-w-md truncate" title={log.details}>
+                            {log.details}
+                          </td>
+                          <td className="px-4 py-3.5 font-semibold text-stone-700 dark:text-stone-300 whitespace-nowrap">
+                            {log.performedBy || 'Administração'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                  {auditLogs.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-12 text-center text-stone-400">
+                        {auditLoading ? 'Carregando logs...' : 'Nenhum registro de auditoria encontrado.'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ABA: DADOS DO NEGÓCIO & PAGAMENTO */}
