@@ -1,10 +1,10 @@
-import { Menu, X, User as UserIcon, LogOut, Settings as SettingsIcon, Bell, Check, Calendar, AlertCircle, Sun, Moon, Sparkles } from 'lucide-react';
+import { Menu, X, User as UserIcon, LogOut, Settings as SettingsIcon, Bell, Check, Calendar, AlertCircle, Sun, Moon, Sparkles, MessageCircle } from 'lucide-react';
 import { useApp } from '../store';
 import { useState, useRef, useEffect } from 'react';
 import { View } from '../types';
 
 export function Header() {
-  const { setView, settings, user, logout, notifications, markNotificationRead, refreshNotifications, themeMode, toggleTheme } = useApp();
+  const { setView, settings, user, logout, notifications, markNotificationRead, refreshNotifications, themeMode, toggleTheme, setIsChatOpen, unreadMessagesCount } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -132,6 +132,20 @@ export function Header() {
               <Sun size={20} className="text-amber-400 transition-transform rotate-0 hover:rotate-90 duration-300" />
             ) : (
               <Moon size={20} className="text-stone-600 hover:text-rose-600 transition-transform -rotate-12 hover:rotate-0 duration-300" />
+            )}
+          </button>
+
+          {/* Chat / Mensagens Button */}
+          <button
+            onClick={() => setIsChatOpen(true)}
+            className="p-2.5 rounded-full hover:bg-rose-50 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer relative"
+            title="Chat com a Especialista / Mensagens"
+          >
+            <MessageCircle size={20} />
+            {unreadMessagesCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+              </span>
             )}
           </button>
 
@@ -307,6 +321,24 @@ export function Header() {
             {themeMode === 'dark' ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} />}
           </button>
 
+          {/* Mobile Chat Button */}
+          <button
+            onClick={() => {
+              setIsChatOpen(true);
+              setMobileMenuOpen(false);
+              setNotificationsOpen(false);
+            }}
+            className="p-2 text-stone-600 dark:text-stone-300 relative cursor-pointer"
+            title="Chat com a Especialista"
+          >
+            <MessageCircle size={20} />
+            {unreadMessagesCount > 0 && (
+              <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+              </span>
+            )}
+          </button>
+
           {user && (
             <button 
               onClick={() => {
@@ -398,6 +430,24 @@ export function Header() {
               {link.label}
             </button>
           ))}
+
+          <button
+            onClick={() => {
+              setIsChatOpen(true);
+              setMobileMenuOpen(false);
+            }}
+            className="text-left font-medium text-stone-700 dark:text-stone-300 py-3 px-4 rounded-xl hover:bg-rose-50 dark:hover:bg-stone-800 flex items-center justify-between cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircle size={16} className="text-rose-500" />
+              <span>Chat com a Especialista</span>
+            </div>
+            {unreadMessagesCount > 0 && (
+              <span className="bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {unreadMessagesCount} nova{unreadMessagesCount > 1 ? 's' : ''}
+              </span>
+            )}
+          </button>
           
           {user && (
             <button

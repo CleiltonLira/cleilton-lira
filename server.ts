@@ -139,6 +139,19 @@ async function startServer() {
       performedBy TEXT,
       createdAt TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      bookingId TEXT,
+      senderId TEXT NOT NULL,
+      senderName TEXT NOT NULL,
+      senderRole TEXT NOT NULL,
+      receiverId TEXT NOT NULL,
+      receiverName TEXT NOT NULL,
+      text TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      read INTEGER DEFAULT 0
+    );
   `);
 
   // Migration for promotions
@@ -890,7 +903,7 @@ async function startServer() {
       const ip = extractClientIP(req);
       if (!checkHoneypotAndBot(req, res)) return;
 
-      const { credential, googleId, email, name, avatarUrl, referralCodeInput } = req.body;
+      const { credential, googleId, email, name, avatarUrl, referralCodeInput, phone } = req.body;
       let gId = googleId;
       let gEmail = email;
       let gName = name;
@@ -917,6 +930,7 @@ async function startServer() {
       }
 
       const emailHash = gEmail ? computeStringIndex(gEmail) : '';
+      const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
 
       // 1. Procurar usuário existente por googleId ou email_hash
       let user = await db.get(
@@ -938,6 +952,34 @@ async function startServer() {
       }
 
       if (user) {
+        // Se usuário existente não tem whatsapp válido cadastrado e não enviou phone agora:
+        const currentDecPhone = decryptData(user.phone) || '';
+        const hasValidPhone = currentDecPhone && !currentDecPhone.startsWith('google_') && currentDecPhone.replace(/\D/g, '').length >= 10;
+
+        if (!hasValidPhone) {
+          if (!cleanPhone || cleanPhone.length < 10) {
+            return res.status(200).json({
+              requiresPhone: true,
+              message: "Por favor, informe seu número de WhatsApp para concluir o acesso.",
+              tempUser: decryptUser(user)
+            });
+          }
+          // Salva o whatsapp fornecido
+          const formattedPhone = cleanPhone.length === 11 
+            ? `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}` 
+            : `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
+          const phoneHash = computeBlindIndex(cleanPhone);
+          const encPhone = encryptData(formattedPhone);
+          await db.run("UPDATE users SET phone = ?, phone_hash = ? WHERE id = ?", [encPhone, phoneHash, user.id]);
+        } else if (cleanPhone && cleanPhone.length >= 10) {
+          const formattedPhone = cleanPhone.length === 11 
+            ? `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}` 
+            : `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
+          const phoneHash = computeBlindIndex(cleanPhone);
+          const encPhone = encryptData(formattedPhone);
+          await db.run("UPDATE users SET phone = ?, phone_hash = ? WHERE id = ?", [encPhone, phoneHash, user.id]);
+        }
+
         if (!user.googleId && gId) {
           await db.run("UPDATE users SET googleId = ? WHERE id = ?", [gId, user.id]);
         }
@@ -957,6 +999,22 @@ async function startServer() {
       }
 
       // 2. Novo usuário: cadastro automático seguro com conta Google
+      // Se não enviou telefone ou telefone inválido, solicitar obrigatoriamente
+      if (!cleanPhone || cleanPhone.length < 10) {
+        return res.status(200).json({
+          requiresPhone: true,
+          message: "Para concluir seu cadastro com conta Google, o número de WhatsApp é obrigatório.",
+          googleData: {
+            googleId: gId,
+            email: gEmail,
+            name: gName,
+            avatarUrl: gAvatar,
+            credential,
+            referralCodeInput
+          }
+        });
+      }
+
       const id = 'g_' + Math.random().toString(36).substring(7);
       const nowIso = new Date().toISOString();
       const userName = (gName || (gEmail ? gEmail.split('@')[0] : 'Cliente Google')).trim();
@@ -980,16 +1038,28 @@ async function startServer() {
       }
 
       const encEmail = gEmail ? encryptData(gEmail.toLowerCase()) : '';
-      const uniquePhonePlaceholder = `google_${gId || id}_${Date.now()}`;
-      const encPhone = encryptData(uniquePhonePlaceholder);
+      const formattedPhone = cleanPhone.length === 11 
+        ? `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}` 
+        : `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
+      const phoneHash = computeBlindIndex(cleanPhone);
+      const encPhone = encryptData(formattedPhone);
       const encCpf = encryptData('');
+
+      // Se já existe um usuário com esse phone, vincula a conta Google a ele
+      const existingWithPhone = await db.get("SELECT id FROM users WHERE phone_hash = ?", [phoneHash]);
+      if (existingWithPhone) {
+        await db.run("UPDATE users SET googleId = ?, email = ?, email_hash = ?, avatarUrl = COALESCE(NULLIF(avatarUrl, ''), ?) WHERE id = ?", [gId || '', encEmail, emailHash, gAvatar || '', existingWithPhone.id]);
+        registerSuccessfulLogin(ip);
+        const linkedUser = await db.get("SELECT * FROM users WHERE id = ?", [existingWithPhone.id]);
+        return res.json(decryptUser(linkedUser));
+      }
 
       await db.run(
         `INSERT INTO users (
           id, name, phone, cpf, role, loyaltyStamps, referralCode, referredBy, referralStamps, firstBookingDone, createdAt, notes,
           googleId, email, avatarUrl, authProvider, email_hash, phone_hash, cpf_hash
-        ) VALUES (?, ?, ?, ?, 'client', 0, ?, ?, 0, 0, ?, '', ?, ?, ?, 'google', ?, '', '')`,
-        [id, userName, encPhone, encCpf, referralCode, referredBy, nowIso, gId || '', encEmail, gAvatar || '', emailHash]
+        ) VALUES (?, ?, ?, ?, 'client', 0, ?, ?, 0, 0, ?, '', ?, ?, ?, 'google', ?, ?, '')`,
+        [id, userName, encPhone, encCpf, referralCode, referredBy, nowIso, gId || '', encEmail, gAvatar || '', emailHash, phoneHash]
       );
 
       registerSuccessfulLogin(ip);
@@ -1288,17 +1358,27 @@ async function startServer() {
 
   app.put("/api/users/:id", async (req, res) => {
     const { name, phone } = req.body;
-    if (!name || !phone) return res.status(400).json({ error: "Nome e telefone são obrigatórios" });
+    const existing = await db.get("SELECT * FROM users WHERE id = ?", [req.params.id]);
+    if (!existing) return res.status(404).json({ error: "Usuário não encontrado" });
+
+    if (!phone) return res.status(400).json({ error: "Número de WhatsApp é obrigatório." });
     
-    const cleanPhone = phone.replace(/\D/g, '');
+    const cleanPhone = String(phone).replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      return res.status(400).json({ error: "Informe um número de WhatsApp válido com DDD." });
+    }
     const phoneHash = computeBlindIndex(cleanPhone);
     
     // Check if phone belongs to someone else
     const existingPhone = await db.get("SELECT id FROM users WHERE phone_hash = ? AND id != ?", [phoneHash, req.params.id]);
     if (existingPhone) return res.status(400).json({ error: "WhatsApp já cadastrado por outro usuário." });
 
-    const encPhone = encryptData(cleanPhone);
-    await db.run("UPDATE users SET name = ?, phone = ?, phone_hash = ? WHERE id = ?", [name.trim(), encPhone, phoneHash, req.params.id]);
+    const formattedPhone = cleanPhone.length === 11 
+      ? `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}` 
+      : `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
+    const encPhone = encryptData(formattedPhone);
+    const targetName = (name || decryptData(existing.name) || 'Cliente').trim();
+    await db.run("UPDATE users SET name = ?, phone = ?, phone_hash = ? WHERE id = ?", [targetName, encPhone, phoneHash, req.params.id]);
     const user = await db.get("SELECT * FROM users WHERE id = ?", [req.params.id]);
     res.json(decryptUser(user));
   });
@@ -1812,6 +1892,88 @@ async function startServer() {
   });
   app.put("/api/notifications/:id/read", async (req, res) => {
     await db.run("UPDATE notifications SET read = 1 WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  });
+
+  // Chat / Mensagens entre Clientes e Profissionais
+  app.get("/api/messages", async (req, res) => {
+    const { userId, otherUserId, bookingId } = req.query;
+    let query = "SELECT * FROM messages";
+    const params: any[] = [];
+
+    if (bookingId) {
+      query += " WHERE bookingId = ? ORDER BY createdAt ASC";
+      params.push(bookingId);
+    } else if (userId && otherUserId) {
+      query += " WHERE ((senderId = ? AND receiverId = ?) OR (senderId = ? AND receiverId = ?)) ORDER BY createdAt ASC";
+      params.push(userId, otherUserId, otherUserId, userId);
+    } else if (userId) {
+      query += " WHERE senderId = ? OR receiverId = ? ORDER BY createdAt ASC";
+      params.push(userId, userId);
+    } else {
+      query += " ORDER BY createdAt ASC";
+    }
+
+    const msgs = await db.all(query, params);
+    const parsed = msgs.map(m => ({
+      ...m,
+      read: Boolean(m.read)
+    }));
+    res.json(parsed);
+  });
+
+  app.post("/api/messages", async (req, res) => {
+    const { id, bookingId, senderId, senderName, senderRole, receiverId, receiverName, text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Mensagem não pode ser vazia." });
+    }
+    const msgId = id || Math.random().toString(36).substring(7);
+    const createdAt = new Date().toISOString();
+
+    await db.run(
+      `INSERT INTO messages (id, bookingId, senderId, senderName, senderRole, receiverId, receiverName, text, createdAt, read) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [msgId, bookingId || '', senderId || 'anon', senderName || 'Cliente', senderRole || 'client', receiverId || 'admin', receiverName || 'Salão', text.trim(), createdAt]
+    );
+
+    // Cria notificação para o destinatário
+    const notifId = Math.random().toString(36).substring(7);
+    const targetUserId = receiverId === 'admin' ? 'admin' : receiverId;
+    await db.run(
+      "INSERT INTO notifications (id, userId, message, type, createdAt) VALUES (?, ?, ?, ?, ?)",
+      [notifId, targetUserId, `💬 Nova mensagem de ${senderName || 'Cliente'}: "${text.trim().slice(0, 45)}${text.length > 45 ? '...' : ''}"`, 'new_chat_message', createdAt]
+    );
+
+    res.json({
+      success: true,
+      message: {
+        id: msgId,
+        bookingId: bookingId || '',
+        senderId: senderId || 'anon',
+        senderName: senderName || 'Cliente',
+        senderRole: senderRole || 'client',
+        receiverId: receiverId || 'admin',
+        receiverName: receiverName || 'Salão',
+        text: text.trim(),
+        createdAt,
+        read: false
+      }
+    });
+  });
+
+  app.put("/api/messages/read", async (req, res) => {
+    const { userId, otherUserId } = req.body;
+    if (userId && otherUserId) {
+      await db.run(
+        "UPDATE messages SET read = 1 WHERE receiverId = ? AND senderId = ?",
+        [userId, otherUserId]
+      );
+    } else if (userId) {
+      await db.run(
+        "UPDATE messages SET read = 1 WHERE receiverId = ?",
+        [userId]
+      );
+    }
     res.json({ success: true });
   });
 

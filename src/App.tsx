@@ -9,9 +9,11 @@ import { Profile } from './components/Profile';
 import { Footer } from './components/Footer';
 import { Toast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { GoogleWhatsAppModal } from './components/GoogleWhatsAppModal';
+import { ChatModal } from './components/ChatModal';
 
 function AppContent() {
-  const { view, settings } = useApp();
+  const { view, settings, isChatOpen, setIsChatOpen, chatInitialClientId } = useApp();
 
   if (!settings) {
     return (
@@ -38,6 +40,12 @@ function AppContent() {
 
       <Footer />
       <Toast />
+      <GoogleWhatsAppModal />
+      <ChatModal 
+        isOpen={isChatOpen} 
+        onClose={() => setIsChatOpen(false)} 
+        initialClientId={chatInitialClientId} 
+      />
     </div>
   );
 }

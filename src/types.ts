@@ -221,3 +221,16 @@ export interface ToastData {
   message: string;
   type: 'success' | 'error';
 }
+
+export interface ChatMessage {
+  id: string;
+  bookingId?: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'client' | 'staff' | 'admin';
+  receiverId: string;
+  receiverName: string;
+  text: string;
+  createdAt: string;
+  read: boolean;
+}

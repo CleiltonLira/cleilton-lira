@@ -5,7 +5,7 @@ import {
   Calendar, Clock, XCircle, Edit2, Gift, Star, FileText, Sparkles, 
   Percent, Share2, Copy, Check, Users, Heart, ArrowRight, Camera, 
   RefreshCw, Trash2, Image as ImageIcon, Video, VideoOff, SwitchCamera,
-  MapPin, CheckCircle2, Bell, AlertCircle
+  MapPin, CheckCircle2, Bell, AlertCircle, MessageCircle
 } from 'lucide-react';
 import { Booking } from '../types';
 import { BookingReceiptModal } from './BookingReceiptModal';
@@ -14,7 +14,8 @@ export function Client() {
   const { 
     user, bookings, services, logout, cancelBooking, rescheduleBooking, 
     settings, feedbacks, addFeedback, updateLoyaltyStamps, updateReferralStamps, 
-    showToast, addBooking, refreshBookings, refreshUser, markClientArrived, setView
+    showToast, addBooking, refreshBookings, refreshUser, markClientArrived, setView,
+    setIsChatOpen, unreadMessagesCount, openChatWith
   } = useApp();
 
   const [rescheduleModal, setRescheduleModal] = useState<{ isOpen: boolean, booking: Booking | null }>({ isOpen: false, booking: null });
@@ -707,43 +708,61 @@ export function Client() {
         </div>
 
         {/* Alternador entre Categorias, Presença e Histórico Completo */}
-        <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 dark:bg-stone-800 p-1 rounded-2xl w-fit">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 dark:bg-stone-800 p-1 rounded-2xl w-fit">
+            <button
+              onClick={() => setActiveViewTab('appointments')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeViewTab === 'appointments'
+                  ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-xs'
+                  : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200'
+              }`}
+            >
+              Agendamentos
+            </button>
+            <button
+              onClick={() => setActiveViewTab('presence')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 relative ${
+                activeViewTab === 'presence'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-emerald-600 dark:text-stone-300 dark:hover:text-emerald-400'
+              }`}
+            >
+              <MapPin size={14} className={activeArrivalPendingCount > 0 ? "text-emerald-400 animate-bounce" : ""} />
+              <span>Confirmar Presença (Cheguei)</span>
+              {activeArrivalPendingCount > 0 && (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveViewTab('history')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeViewTab === 'history'
+                  ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-xs'
+                  : 'text-stone-500 hover:text-rose-600 dark:text-stone-400 dark:hover:text-rose-400'
+              }`}
+            >
+              <Sparkles size={14} /> Histórico da Cliente
+            </button>
+          </div>
+
+          {/* Botão de Chat com o Salão / Especialista */}
           <button
-            onClick={() => setActiveViewTab('appointments')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeViewTab === 'appointments'
-                ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-xs'
-                : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200'
-            }`}
+            type="button"
+            onClick={() => setIsChatOpen(true)}
+            className="px-4 py-2 rounded-2xl text-xs font-bold bg-white dark:bg-stone-800 border border-rose-200 dark:border-stone-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-stone-700 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs relative active:scale-95"
+            title="Abrir Chat com a Especialista"
           >
-            Agendamentos
-          </button>
-          <button
-            onClick={() => setActiveViewTab('presence')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 relative ${
-              activeViewTab === 'presence'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xs'
-                : 'text-stone-600 hover:text-emerald-600 dark:text-stone-300 dark:hover:text-emerald-400'
-            }`}
-          >
-            <MapPin size={14} className={activeArrivalPendingCount > 0 ? "text-emerald-400 animate-bounce" : ""} />
-            <span>Confirmar Presença (Cheguei)</span>
-            {activeArrivalPendingCount > 0 && (
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            <MessageCircle size={14} />
+            <span>Chat com Especialista</span>
+            {unreadMessagesCount > 0 && (
+              <span className="w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                {unreadMessagesCount}
               </span>
             )}
-          </button>
-          <button
-            onClick={() => setActiveViewTab('history')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeViewTab === 'history'
-                ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-xs'
-                : 'text-stone-500 hover:text-rose-600 dark:text-stone-400 dark:hover:text-rose-400'
-            }`}
-          >
-            <Sparkles size={14} /> Histórico da Cliente
           </button>
         </div>
       </div>
@@ -976,12 +995,22 @@ export function Client() {
                     )}
 
                     <div className="mt-4 pt-4 border-t border-stone-100 dark:border-stone-800 flex flex-wrap items-center justify-between gap-3">
-                      <button 
-                        onClick={() => setReceiptBooking(booking)}
-                        className="text-stone-700 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white text-xs font-semibold flex items-center gap-1.5 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors px-3 py-1.5 rounded-xl cursor-pointer"
-                      >
-                        <FileText size={15} className="text-rose-500" /> Ver Comprovante
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button 
+                          onClick={() => setReceiptBooking(booking)}
+                          className="text-stone-700 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white text-xs font-semibold flex items-center gap-1.5 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors px-3 py-1.5 rounded-xl cursor-pointer"
+                        >
+                          <FileText size={15} className="text-rose-500" /> Ver Comprovante
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => openChatWith('admin')}
+                          className="text-rose-700 dark:text-rose-300 hover:text-rose-800 dark:hover:text-white text-xs font-semibold flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 transition-colors px-3 py-1.5 rounded-xl cursor-pointer border border-rose-200 dark:border-rose-900/40"
+                          title="Falar sobre este atendimento no chat"
+                        >
+                          <MessageCircle size={14} className="text-rose-500" /> Chat com o Salão
+                        </button>
+                      </div>
 
                       <div className="flex flex-wrap items-center gap-2">
                         {canCancel && (

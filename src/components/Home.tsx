@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useApp } from '../store';
-import { Clock, Tag, Gift, Users, Sparkles, Heart, Star, CheckCircle2, Camera, X, Maximize2 } from 'lucide-react';
+import { Clock, Tag, Gift, Users, Sparkles, Heart, Star, CheckCircle2, Camera, X, Maximize2, MessageCircle, MessageSquare } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PromoBanner } from './PromoBanner';
 
 export function Home() {
-  const { setView, settings, services, user, feedbacks, hasUserRedeemedPromo } = useApp();
+  const { setView, settings, services, user, feedbacks, hasUserRedeemedPromo, setIsChatOpen, unreadMessagesCount } = useApp();
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+
+  const rawPhone = (settings?.whatsapp || settings?.phone || '11999999999').replace(/\D/g, '');
 
   // Média de avaliações
   const averageRating = feedbacks.length > 0 
@@ -78,19 +80,33 @@ export function Home() {
               {settings.welcomeMessage || settings.heroDescription || 'Agende seu horário com nossas especialistas. Conforto, delicadeza e atendimento de alta qualidade em cada detalhe.'}
             </p>
 
-            <div className="pt-2 flex flex-wrap items-center justify-center md:justify-start gap-4">
+            <div className="pt-2 flex flex-wrap items-center justify-center md:justify-start gap-3 sm:gap-4">
               <button 
                 onClick={() => setView('booking')}
-                className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white px-8 py-3.5 rounded-full font-medium transition-all shadow-lg shadow-rose-200 dark:shadow-none cursor-pointer flex items-center gap-2"
+                className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white px-7 py-3.5 rounded-full font-medium transition-all shadow-lg shadow-rose-200 dark:shadow-none cursor-pointer flex items-center gap-2 active:scale-95"
               >
                 <Sparkles size={18} />
                 <span>Agendar Horário</span>
               </button>
 
+              {/* Botão Oficial de WhatsApp na Página Principal */}
+              {rawPhone && (
+                <a
+                  href={`https://wa.me/55${rawPhone}?text=${encodeURIComponent(`Olá! Estou no site do ${settings.name || 'Studio Bella Beauty'} e gostaria de agendar ou tirar dúvidas pelo WhatsApp ✨`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 rounded-full font-medium transition-all shadow-lg shadow-emerald-600/25 flex items-center gap-2 cursor-pointer active:scale-95"
+                  title="Falar no WhatsApp"
+                >
+                  <MessageCircle size={18} />
+                  <span>Chamar no WhatsApp</span>
+                </a>
+              )}
+
               {!user && (
                 <button
                   onClick={() => setView('register')}
-                  className="bg-white dark:bg-stone-800 hover:bg-rose-50 dark:hover:bg-stone-700 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-stone-700 px-6 py-3.5 rounded-full font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-2"
+                  className="bg-white dark:bg-stone-800 hover:bg-rose-50 dark:hover:bg-stone-700 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-stone-700 px-5 py-3.5 rounded-full font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-2"
                 >
                   <Heart size={16} className="text-rose-500" />
                   <span>Cadastre-se com Bônus</span>
@@ -123,6 +139,19 @@ export function Home() {
                 {settings.address && (
                   <div className="flex items-center gap-2 text-[11px] text-stone-500 dark:text-stone-400">
                     <span>📍 {settings.address}</span>
+                  </div>
+                )}
+                {rawPhone && (
+                  <div className="pt-2 border-t border-stone-100 dark:border-stone-800">
+                    <a
+                      href={`https://wa.me/55${rawPhone}?text=${encodeURIComponent(`Olá! Gostaria de mais informações sobre o ${settings.name || 'Studio Bella Beauty'} ✨`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors"
+                    >
+                      <MessageCircle size={14} />
+                      <span>Falar no WhatsApp Oficial</span>
+                    </a>
                   </div>
                 )}
               </div>
@@ -449,6 +478,39 @@ export function Home() {
           </div>
         </div>
       )}
+
+      {/* Botões Flutuantes: WhatsApp & Chat com a Especialista */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3 pointer-events-none">
+        {/* Botão Flutuante de Chat */}
+        <button
+          type="button"
+          onClick={() => setIsChatOpen(true)}
+          className="pointer-events-auto group flex items-center gap-2 p-3 sm:px-4 sm:py-3 rounded-full bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white shadow-xl shadow-rose-500/30 transition-all transform hover:scale-105 active:scale-95 cursor-pointer relative"
+          title="Abrir Chat com a Especialista"
+        >
+          <MessageSquare size={20} />
+          <span className="hidden sm:inline text-xs font-bold">Chat com o Salão</span>
+          {unreadMessagesCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 text-[10px] font-black rounded-full flex items-center justify-center border-2 border-rose-500 animate-pulse">
+              {unreadMessagesCount}
+            </span>
+          )}
+        </button>
+
+        {/* Botão Flutuante de WhatsApp Oficial */}
+        {rawPhone && (
+          <a
+            href={`https://wa.me/55${rawPhone}?text=${encodeURIComponent(`Olá! Estou no site do ${settings.name || 'Studio Bella Beauty'} e gostaria de atendimento pelo WhatsApp ✨`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="pointer-events-auto group flex items-center gap-2 p-3.5 sm:px-4 sm:py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xl shadow-emerald-500/30 transition-all transform hover:scale-105 active:scale-95 cursor-pointer"
+            title="Conversar no WhatsApp"
+          >
+            <MessageCircle size={22} className="animate-pulse" />
+            <span className="hidden sm:inline text-xs font-bold tracking-wide">Falar no WhatsApp</span>
+          </a>
+        )}
+      </div>
     </motion.div>
   );
 }

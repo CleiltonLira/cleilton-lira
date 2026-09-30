@@ -52,6 +52,7 @@ export function Auth() {
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [googleEmail, setGoogleEmail] = useState('cleiltondasilvalira@gmail.com');
   const [googleName, setGoogleName] = useState('Cleilton Silva');
+  const [googlePhone, setGooglePhone] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   
   const isLogin = view === 'login';
@@ -167,6 +168,12 @@ export function Auth() {
       return;
     }
 
+    const cleanPhone = googlePhone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      showToast('O número de WhatsApp para contatos é obrigatório (mínimo 10 dígitos com DDD).', 'error');
+      return;
+    }
+
     setGoogleLoading(true);
     try {
       const gId = 'gid_' + googleEmail.replace(/[^a-zA-Z0-9]/g, '_');
@@ -174,7 +181,8 @@ export function Auth() {
         googleId: gId,
         email: googleEmail.trim().toLowerCase(),
         name: googleName.trim() || googleEmail.split('@')[0],
-        referralCodeInput: referralCodeInput.trim() || undefined
+        referralCodeInput: referralCodeInput.trim() || undefined,
+        phone: cleanPhone
       });
       if (success) {
         setIsGoogleModalOpen(false);
@@ -582,6 +590,29 @@ export function Auth() {
                     placeholder="Seu nome"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-rose-400"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1 flex items-center justify-between">
+                    <span>Número de WhatsApp (Obrigatório) *</span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Para confirmações</span>
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={googlePhone}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/\D/g, '').slice(0, 11);
+                      if (val.length > 2) val = `(${val.slice(0, 2)}) ${val.slice(2)}`;
+                      if (val.length > 9) val = `${val.slice(0, 10)}-${val.slice(10)}`;
+                      setGooglePhone(val);
+                    }}
+                    placeholder="(11) 99999-9999"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  />
+                  <p className="text-[10px] text-stone-400 dark:text-stone-500 mt-1">
+                    Utilizado para envio dos comprovantes, lembretes e comunicação direta com a equipe.
+                  </p>
                 </div>
 
                 <button

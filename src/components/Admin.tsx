@@ -39,7 +39,8 @@ export function Admin() {
     updateLoyaltyStamps, updateReferralStamps, themeMode, toggleTheme,
     showToast, newBookingAlert, setNewBookingAlert,
     clientArrivalAlert, setClientArrivalAlert,
-    confirmClientPresence, startServiceWithPresence
+    confirmClientPresence, startServiceWithPresence,
+    setIsChatOpen, openChatWith, unreadMessagesCount
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<
@@ -567,12 +568,28 @@ export function Admin() {
               : 'Gerencie atendimentos, equipe, fidelidade, indicações, serviços e a personalização feminina do site.'}
           </p>
         </div>
-        <button 
-          onClick={logout}
-          className="flex items-center gap-2 text-stone-500 hover:text-rose-600 transition-colors px-4 py-2 rounded-lg hover:bg-rose-50 dark:hover:bg-stone-800 w-fit cursor-pointer"
-        >
-          <LogOut size={18} /> Sair
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsChatOpen(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer relative active:scale-95"
+            title="Abrir Central de Chat com Clientes"
+          >
+            <MessageCircle size={16} />
+            <span>Chat com Clientes</span>
+            {unreadMessagesCount > 0 && (
+              <span className="w-4 h-4 bg-white text-rose-600 text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
+                {unreadMessagesCount}
+              </span>
+            )}
+          </button>
+          <button 
+            onClick={logout}
+            className="flex items-center gap-2 text-stone-500 hover:text-rose-600 transition-colors px-3 py-2 rounded-xl hover:bg-rose-50 dark:hover:bg-stone-800 w-fit cursor-pointer text-xs font-semibold"
+          >
+            <LogOut size={16} /> Sair
+          </button>
+        </div>
       </div>
 
       {/* Menu Superior de Abas (filtradas de acordo com as permissões da colaboradora ou acesso total admin) */}
@@ -1085,6 +1102,14 @@ export function Admin() {
                                 title="Ver Histórico Completo da Cliente"
                               >
                                 Ver Histórico
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openChatWith(booking.userId || booking.clientPhone)}
+                                className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800 font-bold transition-colors cursor-pointer flex items-center gap-1"
+                                title="Conversar com esta cliente no Chat"
+                              >
+                                <MessageCircle size={10} /> Chat
                               </button>
                             </div>
                             <div className="text-xs text-stone-500 dark:text-stone-400 flex items-center gap-1 mt-0.5">

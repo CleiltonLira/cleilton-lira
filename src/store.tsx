@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
-import { User, Service, Booking, Settings, View, ToastData, Category, Professional, Feedback, Notification } from './types';
+import { createContext, useContext, useEffect, useState, useRef, useMemo, ReactNode } from 'react';
+import { User, Service, Booking, Settings, View, ToastData, Category, Professional, Feedback, Notification, ChatMessage } from './types';
 
 // Feedback Sonoro Suave (Web Audio API nativo)
 export function playNotificationChime() {
@@ -66,7 +66,7 @@ interface AppContextType {
   toast: ToastData | null;
   showToast: (message: string, type: 'success' | 'error') => void;
   login: (identifier: string, password?: string, honeypotTrap?: string, formLoadedAt?: number) => Promise<boolean>;
-  loginWithGoogle: (googleData: { credential?: string; googleId?: string; email?: string; name?: string; avatarUrl?: string; referralCodeInput?: string }) => Promise<boolean>;
+  loginWithGoogle: (googleData: { credential?: string; googleId?: string; email?: string; name?: string; avatarUrl?: string; referralCodeInput?: string; phone?: string }) => Promise<boolean>;
   logout: () => void;
   register: (name: string, phone: string, cpf: string, password?: string, referralCodeInput?: string, honeypotTrap?: string, formLoadedAt?: number) => Promise<boolean>;
   updateProfile: (name: string, phone: string) => Promise<boolean>;
@@ -113,6 +113,21 @@ interface AppContextType {
   markClientArrived: (id: string) => Promise<boolean>;
   confirmClientPresence: (id: string, confirmedBy?: string) => Promise<boolean>;
   startServiceWithPresence: (id: string) => Promise<boolean>;
+  messages: ChatMessage[];
+  unreadMessagesCount: number;
+  sendMessage: (msg: { text: string; receiverId?: string; receiverName?: string; bookingId?: string }) => Promise<boolean>;
+  markMessagesRead: (otherUserId?: string) => Promise<void>;
+  refreshMessages: () => Promise<void>;
+  requiresGooglePhoneModal: boolean;
+  setRequiresGooglePhoneModal: (open: boolean) => void;
+  tempGoogleAuthData: any;
+  setTempGoogleAuthData: (data: any) => void;
+  completeGoogleLoginWithPhone: (phone: string) => Promise<boolean>;
+  isChatOpen: boolean;
+  setIsChatOpen: (open: boolean) => void;
+  chatInitialClientId?: string;
+  setChatInitialClientId: (id?: string) => void;
+  openChatWith: (clientId?: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -149,9 +164,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [newBookingAlert, setNewBookingAlert] = useState<(Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null>(null);
   const [clientArrivalAlert, setClientArrivalAlert] = useState<(Booking & { clientPhone?: string; clientName?: string; clientCpf?: string }) | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [requiresGooglePhoneModal, setRequiresGooglePhoneModal] = useState<boolean>(false);
+  const [tempGoogleAuthData, setTempGoogleAuthData] = useState<any>(null);
   const knownBookingIdsRef = useRef<Set<string>>(new Set());
   const knownClientArrivedIdsRef = useRef<Set<string>>(new Set());
   const initialBookingsLoadedRef = useRef<boolean>(false);
+
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInitialClientId, setChatInitialClientId] = useState<string | undefined>(undefined);
+
+  const openChatWith = (clientId?: string) => {
+    setChatInitialClientId(clientId);
+    setIsChatOpen(true);
+  };
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -186,6 +212,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (res.ok) setNotifications(await res.json());
     } catch (e) { console.error(e); }
   };
+
+  const refreshMessages = async () => {
+    if (!user) return;
+    try {
+      const url = user.role === 'admin' || user.role === 'staff'
+        ? '/api/messages'
+        : `/api/messages?userId=${user.id}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const unreadMessagesCount = useMemo(() => {
+    if (!user) return 0;
+    if (user.role === 'admin' || user.role === 'staff') {
+      return messages.filter(m => !m.read && m.senderRole === 'client').length;
+    }
+    return messages.filter(m => !m.read && m.receiverId === user.id).length;
+  }, [messages, user]);
 
   const refreshUser = async () => {
     if (!user) return;
@@ -262,17 +312,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('bb_currentUser', JSON.stringify(user));
       refreshBookings(); // Fetch bookings when user logs in
       refreshNotifications(); // Fetch notifications
+      refreshMessages(); // Fetch chat messages
+
+      // Verifica se usuário Google está sem número de WhatsApp válido
+      const userPhone = user.phone ? String(user.phone).replace(/\D/g, '') : '';
+      if (user.authProvider === 'google' && (!userPhone || user.phone?.startsWith('google_') || userPhone.length < 10)) {
+        setRequiresGooglePhoneModal(true);
+      }
       
-      // Polling periódico: administradoras e equipe atualizam a cada 6s para receber novos agendamentos imediatamente
+      // Polling periódico: administradoras e equipe atualizam a cada 6s para receber novos agendamentos e mensagens imediatamente
       const isStaffOrAdmin = user.role === 'admin' || user.role === 'staff';
-      const pollIntervalTime = isStaffOrAdmin ? 6000 : 25000;
+      const pollIntervalTime = isStaffOrAdmin ? 6000 : 15000;
       const interval = setInterval(() => {
         refreshBookings();
         refreshNotifications();
+        refreshMessages();
       }, pollIntervalTime);
       return () => clearInterval(interval);
     } else {
       localStorage.removeItem('bb_currentUser');
+      setMessages([]);
     }
   }, [user]);
 
@@ -347,7 +406,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const loginWithGoogle = async (googleData: { credential?: string; googleId?: string; email?: string; name?: string; avatarUrl?: string; referralCodeInput?: string }) => {
+  const loginWithGoogle = async (googleData: { credential?: string; googleId?: string; email?: string; name?: string; avatarUrl?: string; referralCodeInput?: string; phone?: string }) => {
     try {
       const res = await fetch('/api/auth/google', {
         method: 'POST',
@@ -355,10 +414,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(googleData)
       });
       if (res.ok) {
-        const loggedUser = await res.json();
-        setUser(loggedUser);
-        setView(loggedUser.role === 'admin' ? 'admin' : 'client');
-        showToast(`Bem-vinda, ${loggedUser.name || 'Cliente'}! Acesso Google realizado com sucesso ✨`, 'success');
+        const data = await res.json();
+        if (data.requiresPhone) {
+          setTempGoogleAuthData({
+            ...(data.googleData || {}),
+            ...(data.tempUser || {}),
+            ...googleData
+          });
+          setRequiresGooglePhoneModal(true);
+          showToast(data.message || 'Informe seu número de WhatsApp para concluir.', 'error');
+          return false;
+        }
+
+        setUser(data);
+        setRequiresGooglePhoneModal(false);
+        setTempGoogleAuthData(null);
+        setView(data.role === 'admin' ? 'admin' : 'client');
+        showToast(`Bem-vinda, ${data.name || 'Cliente'}! Acesso Google realizado com sucesso ✨`, 'success');
         return true;
       } else {
         const errorData = await res.json();
@@ -369,6 +441,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
       showToast('Erro de conexão ao autenticar com o Google.', 'error');
       return false;
     }
+  };
+
+  const completeGoogleLoginWithPhone = async (phone: string) => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      showToast('Por favor, informe seu WhatsApp com DDD (mínimo 10 dígitos).', 'error');
+      return false;
+    }
+
+    if (user && user.authProvider === 'google') {
+      const ok = await updateProfile(user.name, cleanPhone);
+      if (ok) {
+        setRequiresGooglePhoneModal(false);
+        setTempGoogleAuthData(null);
+        showToast('WhatsApp cadastrado com sucesso!', 'success');
+        return true;
+      }
+      return false;
+    }
+
+    if (tempGoogleAuthData) {
+      const payload = {
+        ...tempGoogleAuthData,
+        phone: cleanPhone
+      };
+      return await loginWithGoogle(payload);
+    }
+
+    return false;
   };
 
   const updateProfile = async (name: string, phone: string) => {
@@ -773,6 +874,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const sendMessage = async (msgData: { text: string; receiverId?: string; receiverName?: string; bookingId?: string }) => {
+    if (!user) return false;
+    try {
+      const targetReceiverId = msgData.receiverId || (user.role === 'client' ? 'admin' : '');
+      const targetReceiverName = msgData.receiverName || (user.role === 'client' ? 'Studio Bella Beauty' : 'Cliente');
+
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: user.id,
+          senderName: user.name || 'Cliente',
+          senderRole: user.role,
+          receiverId: targetReceiverId,
+          receiverName: targetReceiverName,
+          bookingId: msgData.bookingId || '',
+          text: msgData.text
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.message) {
+          setMessages(prev => [...prev, data.message]);
+        }
+        return true;
+      }
+      return false;
+    } catch {
+      showToast('Erro ao enviar mensagem.', 'error');
+      return false;
+    }
+  };
+
+  const markMessagesRead = async (otherUserId?: string) => {
+    if (!user) return;
+    try {
+      await fetch('/api/messages/read', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          otherUserId: otherUserId || (user.role === 'client' ? 'admin' : undefined)
+        })
+      });
+      setMessages(prev => prev.map(m => {
+        if (otherUserId) {
+          if (m.senderId === otherUserId && (m.receiverId === user.id || user.role === 'admin')) {
+            return { ...m, read: true };
+          }
+        } else if (m.receiverId === user.id || user.role === 'admin') {
+          return { ...m, read: true };
+        }
+        return m;
+      }));
+    } catch {}
+  };
+
   const handleUpdateSettings = async (newSettings: Settings) => {
     try {
       await fetch('/api/settings', {
@@ -841,7 +1000,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       themeMode, toggleTheme,
       newBookingAlert, setNewBookingAlert,
       clientArrivalAlert, setClientArrivalAlert,
-      markClientArrived, confirmClientPresence, startServiceWithPresence
+      markClientArrived, confirmClientPresence, startServiceWithPresence,
+      messages, unreadMessagesCount, sendMessage, markMessagesRead, refreshMessages,
+      requiresGooglePhoneModal, setRequiresGooglePhoneModal, tempGoogleAuthData, setTempGoogleAuthData,
+      completeGoogleLoginWithPhone,
+      isChatOpen, setIsChatOpen, chatInitialClientId, setChatInitialClientId, openChatWith
     }}>
       {children}
     </AppContext.Provider>
